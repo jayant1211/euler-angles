@@ -2,9 +2,20 @@ from landmark_detection import MarkDetector, FaceDetector
 import cv2
 import numpy as np
 import math
+import os
 
 mark_detector = MarkDetector()
 cap = cv2.VideoCapture(0)
+
+frame_width = int(cap.get(3))
+frame_height = int(cap.get(4))
+   
+vid_size = (frame_width, frame_height)
+   
+vid_result = cv2.VideoWriter('result.avi', 
+                         cv2.VideoWriter_fourcc(*'MJPG'),
+                         10, vid_size)
+
 _, img = cap.read()
 size = img.shape
 font = cv2.FONT_HERSHEY_SIMPLEX 
@@ -28,9 +39,16 @@ camera_matrix = np.array(
                         [0, 0, 1]], dtype = "double"
                         )
 
+images = os.listdir('images')
+i = 0
+
 while True:
     ret, img = cap.read()
-    if ret == True:
+    #imgname = 'images/' + images[i]
+    #print(imgname)
+    #img = cv2.imread(imgname)
+    if True:
+        img = cv2.flip(img,1)
         faceboxes = mark_detector.extract_cnn_facebox(img)
 
         for facebox in faceboxes:
@@ -70,18 +88,25 @@ while True:
             as well as the camera intrinsic matrix and the distortion coefficients, 
             see the figure below (more precisely, the X-axis of the camera frame is pointing to the right, the Y-axis downward and the Z-axis forward).
             '''
-            (success, rotation_vector, translation_vector) = cv2.solvePnP(model_points, image_points, camera_matrix, dist_coeffs)
+            (success, rotation_vector, tvec) = cv2.solvePnP(model_points, image_points, camera_matrix, dist_coeffs)
 
             axis = np.float32([[500,0,0], [0,500,0], [0,0,500]]) # the to be projected one in x y z for pitch yaw roll representation
                                 
-            imgpts, jac = cv2.projectPoints(axis, rotation_vector, translation_vector, camera_matrix, dist_coeffs)
+            imgpts, jac = cv2.projectPoints(axis, rotation_vector, tvec, camera_matrix, dist_coeffs)
             
-            modelpts, jac2 = cv2.projectPoints(model_points, rotation_vector, translation_vector, camera_matrix, dist_coeffs)
+            modelpts, jac2 = cv2.projectPoints(model_points, rotation_vector, tvec, camera_matrix, dist_coeffs)
 
             #converts rotation vector to rotation matrix using Rodrigues transformation
-            rvec_matrix = cv2.Rodrigues(rotation_vector)[0]
+            rmat = cv2.Rodrigues(rotation_vector)[0]
 
-            proj_matrix = np.hstack((rvec_matrix, translation_vector))
+            proj_matrix = np.hstack((rmat, tvec))
+            
+            '''head_pose = [ rmat[0,0], rmat[0,1], rmat[0,2], tvec[0],
+                       rmat[1,0], rmat[1,1], rmat[1,2], tvec[1],
+                       rmat[2,0], rmat[2,1], rmat[2,2], tvec[2],
+                             0.0,      0.0,        0.0,    1.0 ]
+
+            roll, pitch, yaw = rotationMatrixToEulerAngles(rmat)'''
 
             '''
             Input
@@ -94,17 +119,32 @@ while True:
                     rotMatrX 3x3 rotation matrix around x-axis.
                     rotMatrY 3x3 rotation matrix around y-axis.
                     rotMatrZ 3x3 rotation matrix around z-axis.
-                eulerAngles 3-element vector containing three Euler angles of rotation in degrees.
-            '''
-            eulerAngles = cv2.decomposeProjectionMatrix(proj_matrix)[6] 
+                eulerAngles 3-element vector containing three Euler angles of rotation in degrees.'''
+            
+            '''eulerAngles = -cv2.decomposeProjectionMatrix(proj_matrix)[6] 
+            yaw   = eulerAngles[1]
+            pitch = eulerAngles[0]
+            roll  = eulerAngles[2]
 
+            if pitch > 0:
+                pitch = 180 - pitch
+            elif pitch < 0:
+                pitch = -180 - pitch
+            yaw = -yaw''' 
 
-            pitch, yaw, roll = [math.radians(_) for _ in eulerAngles]
+            '''yawpitchroll_angles = -180*yawpitchrolldecomposition(rmat)/math.pi
+            #yawpitchroll_angles[0,0] = (360-yawpitchroll_angles[0,0])%360 # change rotation sense if needed, comment this line otherwise
+            yawpitchroll_angles[1,0] = yawpitchroll_angles[1,0]+90
 
+            print(yawpitchroll_angles)'''
 
-            pitch = math.degrees(math.asin(math.sin(pitch)))
-            roll = -math.degrees(math.asin(math.sin(roll)))
-            yaw = math.degrees(math.asin(math.sin(yaw)))
+            print(rmat)
+            
+            roll = math.degrees(math.atan2(rmat[1][0],rmat[0][0]))
+            yaw = math.degrees(math.atan2(rmat[2][0],math.sqrt(pow(rmat[2][1],2)+pow(rmat[2][2],2))))
+            pitch = -1*math.degrees(math.atan(rmat[2][1]/rmat[2][2]))
+
+            print("yaw:{} pith:{} roll:{}".format(yaw,pitch,roll))
 
             nose = (shape[30][0],shape[30][1])
             imgpts = imgpts.astype(int)
@@ -115,18 +155,21 @@ while True:
             cv2.line(img, nose, tuple(imgpts[2].ravel()), (220,220,220), 3)
 
             #roll:
-            img = cv2.putText(img,"Roll:{}".format(int(roll)),(10,30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), thickness=2, lineType=2)
+            img = cv2.putText(img,"Roll:{}".format(int(roll)),(10,50), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), thickness=2, lineType=2)
 
             #pitch
-            img = cv2.putText(img,"Pitch:{}".format(int(pitch)),(10,80), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), thickness=2, lineType=2)
+            img = cv2.putText(img,"Pitch:{}".format(int(pitch)),(10,100), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), thickness=2, lineType=2)
 
             #yaw:
-            img = cv2.putText(img,"Yaw:{}".format(int(yaw)),(10,130), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), thickness=2, lineType=2)
+            img = cv2.putText(img,"Yaw:{}".format(int(yaw)),(10,150), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 0), thickness=2, lineType=2)
+
 
         cv2.imshow('img', img)
+        vid_result.write(img)
+        #cv2.imwrite('res_'+'{}'.format(imgname[7:]),img)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-    else:
-        break
+    i+=1
 cv2.destroyAllWindows()
 cap.release()
+vid_result.release()
