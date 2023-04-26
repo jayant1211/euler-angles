@@ -15,4 +15,5 @@
 
 ### RESULTS:
 
-You can see the result in video
+You can see the result in video<br>
+<img src="https://github.com/jayant1211/euler-angles/blob/main/results/result_.gif" width="50%" height="50%">
